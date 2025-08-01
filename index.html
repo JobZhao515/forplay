@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>✌️ 手势识别 + 纸飞机动画</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      display: flex; /* 使用 Flexbox 布局 */
+      justify-content: center; /* 水平居中 */
+      align-items: center; /* 垂直居中 */
+      min-height: 100vh; /* 确保 body 至少占满视口高度 */
+      background-color: #f0f0f0; /* 可选：添加背景色方便观察 */
+    }
+    .paper-plane { /* 类名改为 paper-plane */
+      position: fixed; /* 使用fixed定位 */
+      width: 80px; /* 调整纸飞机大小 */
+      height: auto;
+      animation: fly 4s ease-in-out forwards; /* 动画名称改为 fly */
+      z-index: 10; /* 确保在画布上方 */
+    }
+
+    /* 新增：CSS 绘制纸飞机样式 */
+    .paper-plane-css {
+      width: 0;
+      height: 0;
+      border-left: 40px solid transparent;
+      border-right: 40px solid transparent;
+      border-bottom: 80px solid #ADD8E6; /* 浅蓝色纸飞机 */
+      position: fixed;
+      animation: fly 4s ease-in-out forwards;
+      z-index: 10;
+      transform-origin: bottom center; /* 动画旋转中心 */
+    }
+
+    @keyframes fly { /* 动画关键帧改为 fly */
+      0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+      25% { transform: translate(50px, -200px) rotate(10deg); opacity: 1; }
+      50% { transform: translate(-50px, -400px) rotate(-10deg); opacity: 1; }
+      75% { transform: translate(20px, -600px) rotate(5deg); opacity: 0.5; }
+      100% { transform: translate(0, -800px) rotate(0deg); opacity: 0; } /* 调整飞行路径和透明度 */
+    }
+
+    #video, .output {
+      position: absolute; /* 保持绝对定位，但通过 body 的 flexbox 居中 */
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%); /* 精确居中 */
+      display: block; /* 确保显示 */
+    }
+
+    #video {
+      display: none; /* 视频元素仍然隐藏，只显示 canvas */
+    }
+  </style>
+</head>
+<body>
+  <video id="video" width="640" height="480" autoplay muted playsinline></video>
+  <canvas class="output" width="640" height="480"></canvas>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+  <script>
+    const videoElement = document.getElementById('video');
+    const canvasElement = document.querySelector('canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+
+    // 纸飞机图片 URL
+    const paperPlaneUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/Paper_plane.svg/1200px-Paper_plane.svg.png";
+
+    function spawnPaperPlane() { // 移除 imageUrl 参数
+      const paperPlane = document.createElement("div"); // 创建 div 元素
+      paperPlane.className = "paper-plane-css"; // 使用 CSS 绘制的类名
+      
+      // 获取画布位置和尺寸
+      const canvas = document.querySelector('canvas');
+      const canvasRect = canvas.getBoundingClientRect();
+      
+      // 计算纸飞机应该在的位置（画布范围内）
+      // 纸飞机从画布底部随机位置出现
+      const planeWidth = 80; // 纸飞机宽度
+      const maxLeft = canvasRect.width - planeWidth; 
+      const left = canvasRect.left + Math.random() * maxLeft;
+      
+      paperPlane.style.left = left + "px";
+      paperPlane.style.bottom = (window.innerHeight - canvasRect.bottom) + "px"; // 确保纸飞机从画布底部开始，而不是屏幕底部
+      
+      // 移除图片加载相关的代码
+      // paperPlane.onerror = function() {
+      //   console.error("纸飞机图片加载失败", imageUrl);
+      //   this.remove();
+      // };
+      // paperPlane.src = imageUrl;
+      
+      document.body.appendChild(paperPlane);
+      
+      setTimeout(() => paperPlane.remove(), 4000);
+    }
+
+    function isVictoryGesture(landmarks) {
+      // 简单判断：食指（8）和中指（12）向上，其余手指（16、20、4）弯曲
+      const isIndexUp = landmarks[8].y < landmarks[6].y;
+      const isMiddleUp = landmarks[12].y < landmarks[10].y;
+      const isRingDown = landmarks[16].y > landmarks[14].y;
+      const isPinkyDown = landmarks[20].y > landmarks[18].y;
+      const isThumbDown = landmarks[4].x < landmarks[3].x;
+      return isIndexUp && isMiddleUp && isRingDown && isPinkyDown;
+    }
+
+    function isOkGesture(landmarks) {
+      // 简单判断：拇指（4）和食指（8）靠近形成圈，其他手指（12, 16, 20）伸直
+      // 判断拇指和食指尖的距离是否足够近
+      const thumbTip = landmarks[4];
+      const indexTip = landmarks[8];
+      const distance = Math.sqrt(Math.pow(thumbTip.x - indexTip.x, 2) + Math.pow(thumbTip.y - indexTip.y, 2));
+      const isThumbIndexClose = distance < 0.05; // 阈值可能需要根据实际情况调整
+
+      // 判断中指、无名指、小指是否伸直（指尖高于指根）
+      const isMiddleUp = landmarks[12].y < landmarks[10].y;
+      const isRingUp = landmarks[16].y < landmarks[14].y;
+      const isPinkyUp = landmarks[20].y < landmarks[18].y;
+
+      return isThumbIndexClose && isMiddleUp && isRingUp && isPinkyUp;
+    }
+
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.5
+    });
+
+    hands.onResults(results => {
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      if (results.multiHandLandmarks.length > 0) {
+        const landmarks = results.multiHandLandmarks[0];
+        drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 2 });
+        drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 1 });
+        
+        if (isVictoryGesture(landmarks)) {
+          spawnPaperPlane(); // 调用 spawnPaperPlane，不带参数
+        } else if (isOkGesture(landmarks)) {
+          console.log("OK Gesture Detected!");
+          spawnPaperPlane(); // 调用 spawnPaperPlane，不带参数
+        }
+      }
+      canvasCtx.restore();
+    });
+
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({ image: videoElement });
+      },
+      width: 640,
+      height: 480
+    });
+
+    camera.start();
+  </script>
+</body>
+</html>
