@@ -41,6 +41,41 @@
       100% { transform: translate(0, -800px) rotate(0deg); opacity: 0; } /* 调整飞行路径和透明度 */
     }
 
+    /* 新增：红心动画样式 */
+    .heart {
+      position: fixed;
+      width: 50px;
+      height: 50px;
+      background-color: red;
+      transform: rotate(45deg);
+      animation: heartBeat 2s ease-in-out forwards;
+      z-index: 10;
+    }
+
+    .heart::before,
+    .heart::after {
+      content: '';
+      position: absolute;
+      width: 50px;
+      height: 50px;
+      background-color: red;
+      border-radius: 50%;
+    }
+
+    .heart::before {
+      left: -25px;
+    }
+
+    .heart::after {
+      top: -25px;
+    }
+
+    @keyframes heartBeat {
+      0% { transform: rotate(45deg) scale(1); opacity: 1; }
+      50% { transform: rotate(45deg) scale(1.3); opacity: 0.8; }
+      100% { transform: rotate(45deg) scale(0.5); opacity: 0; }
+    }
+
     #video, .output {
       position: absolute; /* 保持绝对定位，但通过 body 的 flexbox 居中 */
       top: 50%;
@@ -68,6 +103,36 @@
 
     // 纸飞机图片 URL
     const paperPlaneUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/Paper_plane.svg/1200px-Paper_plane.svg.png";
+
+    function spawnHeart() {
+      const heart = document.createElement("div");
+      heart.className = "heart";
+      
+      const canvas = document.querySelector('canvas');
+      const canvasRect = canvas.getBoundingClientRect();
+      
+      // 在画布中心生成红心
+      heart.style.left = (canvasRect.left + canvasRect.width/2 - 25) + "px";
+      heart.style.top = (canvasRect.top + canvasRect.height/2 - 25) + "px";
+      
+      document.body.appendChild(heart);
+      
+      setTimeout(() => heart.remove(), 2000);
+    }
+
+    function isHeartGesture(landmarks) {
+      // 判断大拇指是否伸直且朝上
+      const isThumbUp = landmarks[4].y < landmarks[3].y;
+      // 判断食指是否弯曲（指尖低于第二关节）
+      const isIndexBent = landmarks[8].y > landmarks[6].y;
+      // 其他手指是否弯曲
+      const isOtherFingersBent = 
+        landmarks[12].y > landmarks[10].y && // 中指
+        landmarks[16].y > landmarks[14].y && // 无名指
+        landmarks[20].y > landmarks[18].y;   // 小指
+      
+      return isThumbUp && isIndexBent && isOtherFingersBent;
+    }
 
     function spawnPaperPlane() { // 移除 imageUrl 参数
       const paperPlane = document.createElement("div"); // 创建 div 元素
@@ -129,7 +194,7 @@
     });
 
     hands.setOptions({
-      maxNumHands: 1,
+      maxNumHands: 2,
       modelComplexity: 1,
       minDetectionConfidence: 0.7,
       minTrackingConfidence: 0.5
@@ -139,18 +204,32 @@
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-      if (results.multiHandLandmarks.length > 0) {
-        const landmarks = results.multiHandLandmarks[0];
+      
+      // 检查是否有两只手都在做比心手势
+      if (results.multiHandLandmarks.length === 2) {
+        const leftHand = results.multiHandLandmarks[0];
+        const rightHand = results.multiHandLandmarks[1];
+        
+        if (isHeartGesture(leftHand) && isHeartGesture(rightHand)) {
+          spawnHeart();
+        }
+      }
+      
+      // 遍历检测到的所有手
+      results.multiHandLandmarks.forEach((landmarks, index) => {
+        // 绘制手部关键点和连接线
         drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 2 });
         drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 1 });
         
+        // 检查每只手的手势
         if (isVictoryGesture(landmarks)) {
-          spawnPaperPlane(); // 调用 spawnPaperPlane，不带参数
+          spawnPaperPlane();
         } else if (isOkGesture(landmarks)) {
           console.log("OK Gesture Detected!");
-          spawnPaperPlane(); // 调用 spawnPaperPlane，不带参数
+          spawnPaperPlane();
         }
-      }
+      });
+      
       canvasCtx.restore();
     });
 
